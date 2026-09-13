@@ -1,0 +1,84 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+.venv/
+.venv3/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data (generated)
+jarvis/data/audio/*.mp3
+jarvis/data/audio/*.wav
+*.mp3
+*.wav
+
+# Secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Logs
+*.log
+jarvis/data/logs/
+
+# Ollama
+.ollama/
+
+# Exes
+dist/
+*.exe
+*.exe.config
+
+# PyInstaller
+*.spec
+
+# Test
+coverage/
+htmlcov/
+.pytest_cache/
+.coverage
+*.cover
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Temp
+tmp/
+temp/

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>JARVIS — Voice Assistant</title>
+<style>
+  :root{
+    --bg:#04070d; --bg2:#0a1220; --cyan:#39d7ff; --cyan-d:#0b6f8f;
+    --blue:#4f8cff; --txt:#dff2ff; --dim:#7f9bb5; --ok:#3ce08a; --warn:#ffc247; --err:#ff5d6c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 700px at 50% -10%, #0d2036 0%, var(--bg) 55%, #01030a 100%);
+    color:var(--txt); font-family:'Segoe UI',system-ui,-apple-system,'Noto Sans Devanagari',sans-serif;
+    overflow-x:hidden; min-height:100%;
+  }
+  body::before{ /* grid */
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.13;
+    background-image:linear-gradient(var(--cyan) 1px,transparent 1px),linear-gradient(90deg,var(--cyan) 1px,transparent 1px);
+    background-size:46px 46px; mask-image:radial-gradient(circle at 50% 30%,#000 20%,transparent 75%);
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:18px 16px 130px;position:relative;z-index:2}
+
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .logo{font-size:26px;font-weight:800;letter-spacing:6px;color:var(--cyan);
+    text-shadow:0 0 18px rgba(57,215,255,.65)}
+  .tag{color:var(--dim);font-size:12.5px;letter-spacing:.5px}
+  .pills{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
+  .pill{font-size:11.5px;padding:4px 10px;border:1px solid rgba(57,215,255,.28);
+    border-radius:99px;color:var(--dim);background:rgba(9,20,34,.6);display:flex;align-items:center;gap:6px}
+  .dot{width:7px;height:7px;border-radius:99px;background:var(--err);box-shadow:0 0 8px currentColor}
+  .dot.on{background:var(--ok);color:var(--ok)}
+  .dot.mid{background:var(--warn);color:var(--warn)}
+
+  /* ---------------- orb ---------------- */
+  .stage{display:flex;justify-content:center;padding:26px 0 8px;position:relative}
+  .orb{position:relative;width:210px;height:210px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .ring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(57,215,255,.35)}
+  .r1{animation:spin 9s linear infinite;border-style:dashed;border-color:rgba(57,215,255,.45)}
+  .r2{inset:16px;border:2px solid rgba(79,140,255,.35);animation:spin 6s linear infinite reverse;
+      border-top-color:var(--cyan);border-left-color:transparent}
+  .r3{inset:34px;border:1px solid rgba(57,215,255,.25);animation:spin 14s linear infinite}
+  .core{position:absolute;inset:52px;border-radius:50%;
+    background:radial-gradient(circle at 50% 42%,#bff4ff 0%,#39d7ff 32%,#0e74a8 62%,#04202f 100%);
+    box-shadow:0 0 46px rgba(57,215,255,.55),inset 0 0 34px rgba(255,255,255,.35);
+    animation:breathe 3.4s ease-in-out infinite}
+  .core::after{content:"";position:absolute;inset:22%;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.95),rgba(255,255,255,0) 70%);filter:blur(3px)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes breathe{0%,100%{transform:scale(1);opacity:.95}50%{transform:scale(1.07);opacity:1}}
+  .orb.listening .core{animation:breathe 1s ease-in-out infinite;box-shadow:0 0 70px rgba(60,224,138,.65),inset 0 0 34px rgba(255,255,255,.4);
+    background:radial-gradient(circle at 50% 42%,#d6ffe9 0%,#3ce08a 32%,#0f7a4c 62%,#042018 100%)}
+  .orb.thinking .r2{animation-duration:.9s}
+  .orb.thinking .core{animation:breathe .7s ease-in-out infinite;
+    background:radial-gradient(circle at 50% 42%,#fff3d0 0%,#ffc247 32%,#a86a0b 62%,#2a1a04 100%)}
+  .orb.speaking .core{animation:pulse .45s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1.02)}50%{transform:scale(1.13)}}
+  .bars{position:absolute;left:50%;bottom:-30px;transform:translateX(-50%);display:flex;gap:4px;align-items:flex-end;height:22px}
+  .bars i{width:4px;height:5px;background:var(--cyan);border-radius:2px;opacity:.85;display:block}
+  .orb.speaking .bars i{animation:eq .6s ease-in-out infinite}
+  .orb.speaking .bars i:nth-child(2){animation-delay:.08s}.orb.speaking .bars i:nth-child(3){animation-delay:.16s}
+  .orb.speaking .bars i:nth-child(4){animation-delay:.24s}.orb.speaking .bars i:nth-child(5){animation-delay:.32s}
+  @keyframes eq{0%,100%{height:5px}50%{height:22px}}
+  .state{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--dim);
+    letter-spacing:2px;text-transform:uppercase;white-space:nowrap}
+
+  /* ---------------- chat ---------------- */
+  .chat{margin-top:26px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:min(760px,92%);padding:12px 15px;border-radius:16px;line-height:1.55;font-size:15px;
+    border:1px solid rgba(57,215,255,.16);background:rgba(9,20,34,.72);animation:up .25s ease}
+  @keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .msg.you{align-self:flex-end;background:rgba(20,52,86,.75);border-color:rgba(79,140,255,.4)}
+  .msg.bot{align-self:flex-start}
+  .who{font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+  .msg.you .who{text-align:right;color:#9dc2ff}
+  .extra{margin-top:8px;padding:9px 11px;border-left:2px solid var(--cyan-d);background:rgba(4,12,22,.7);
+    font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:#a9d7ea;white-space:pre-wrap;border-radius:6px}
+  .chips{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:10.5px;padding:2px 8px;border-radius:99px;border:1px solid rgba(60,224,138,.4);
+    color:#8ff0bd;background:rgba(60,224,138,.08)}
+  .chip.src{border-color:rgba(255,194,71,.4);color:#ffd98a;background:rgba(255,194,71,.08)}
+  .chip.err{border-color:rgba(255,93,108,.45);color:#ff9aa4;background:rgba(255,93,108,.08)}
+  .typing{display:inline-block;color:var(--cyan)}
+  .typing::after{content:"▌";animation:blink .8s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ---------------- suggestions ---------------- */
+  .sugs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:18px}
+  .sug{font-size:12.5px;padding:7px 13px;border-radius:99px;border:1px solid rgba(57,215,255,.3);
+    color:#bfe9ff;background:rgba(9,22,38,.7);cursor:pointer;transition:.15s}
+  .sug:hover{background:rgba(57,215,255,.16);transform:translateY(-2px);box-shadow:0 6px 18px rgba(57,215,255,.18)}
+
+  /* ---------------- input bar ---------------- */
+  .bar{position:fixed;left:0;right:0;bottom:0;padding:12px 14px 18px;z-index:5;
+    background:linear-gradient(to top,rgba(2,5,11,.98) 55%,rgba(2,5,11,0));}
+  .barin{max-width:1120px;margin:0 auto;display:flex;gap:10px;align-items:center}
+  input[type=text]{flex:1;padding:14px 16px;border-radius:14px;border:1px solid rgba(57,215,255,.3);
+    background:rgba(6,14,26,.95);color:var(--txt);font-size:15.5px;outline:none}
+  input[type=text]:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(57,215,255,.14)}
+  .btn{width:52px;height:52px;flex:0 0 52px;border-radius:50%;border:1px solid rgba(57,215,255,.45);
+    background:radial-gradient(circle at 50% 35%,#1a4f6b,#071a28);color:var(--cyan);cursor:pointer;
+    display:grid;place-items:center;font-size:20px;transition:.15s}
+  .btn:hover{box-shadow:0 0 22px rgba(57,215,255,.45)}
+  .btn.mic.rec{background:radial-gradient(circle at 50% 35%,#7a1f2b,#2a0810);border-color:var(--err);
+    color:var(--err);animation:pulse .9s infinite}
+  .btn.small{width:44px;height:44px;flex:0 0 44px;font-size:15px;opacity:.85}
+  .warn{max-width:1120px;margin:8px auto 0;font-size:11.5px;color:var(--warn);text-align:center;display:none}
+  svg{display:block}
+  @media (max-width:600px){.orb{width:170px;height:170px}.core{inset:44px}.logo{letter-spacing:4px;font-size:21px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="logo">J.A.R.V.I.S</div>
+      <div class="tag">Personal Voice Assistant &middot; Hinglish &middot; offline-first</div>
+    </div>
+    <div class="pills">
+      <span class="pill"><i class="dot" id="dOllama"></i><span id="tOllama">Ollama…</span></span>
+      <span class="pill"><i class="dot on"></i>Server</span>
+      <span class="pill"><i class="dot" id="dVoice"></i><span id="tVoice">Voice…</span></span>
+      <span class="pill" id="tModel" title="Ollama model">model…</span>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="orb" id="orb" title="Mic on/off">
+      <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+      <div class="core"></div>
+      <div class="bars"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="state" id="state">ready</div>
+    </div>
+  </div>
+
+  <div class="chat" id="chat"></div>
+
+  <div class="sugs" id="sugs"></div>
+  <div class="warn" id="warn"></div>
+</div>
+
+<div class="bar">
+  <div class="barin">
+    <button class="btn mic" id="mic" title="Bol kar baat karo">&#127908;</button>
+    <input type="text" id="q" placeholder="Likho ya mic daba kar bolo…  e.g. shaam 6 baje reminder laga" autocomplete="off">
+    <button class="btn" id="send" title="Bhejo">&#10148;</button>
+    <button class="btn small" id="tts" title="Awaaz on/off">&#128266;</button>
+    <button class="btn small" id="clr" title="Chat clear">&#8635;</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const chat = $('#chat'), orb = $('#orb'), stateEl = $('#state'), qEl = $('#q');
+let ttsOn = true, busy = false, audio = null, lastBotNode = null;
+
+const SUGS = ["kitne baje hain","shaam 6 baje meeting ka reminder laga","250 guna 4 kitna hota hai",
+  "jabalpur ka mausam kaisa hai","notepad kholo","youtube pe arijit singh chalao",
+  "virat kohli kaun hai","note karo doodh lana hai","system info","ek joke sunao"];
+
+// ---------- state ----------
+function setState(cls, txt){
+  orb.classList.remove('listening','thinking','speaking');
+  if(cls) orb.classList.add(cls);
+  stateEl.textContent = txt;
+}
+
+// ---------- status ----------
+async function loadStatus(){
+  try{
+    const r = await fetch('/api/status'); const s = await r.json();
+    $('#dOllama').classList.toggle('on', s.ollama);
+    $('#dOllama').classList.toggle('mid', !s.ollama);
+    $('#tOllama').textContent = s.ollama ? 'Ollama ON' : 'Ollama OFF (rule mode)';
+    $('#tModel').textContent = s.model;
+    $('#tVoice').textContent = s.voice || 'voice';
+    $('#dVoice').classList.toggle('on', true);
+  }catch(e){ $('#tOllama').textContent = 'server band?'; }
+}
+loadStatus(); setInterval(loadStatus, 15000);
+
+// ---------- suggestions ----------
+SUGS.forEach(t=>{
+  const b = document.createElement('div'); b.className='sug'; b.textContent=t;
+  b.onclick = ()=>{ qEl.value=t; send(); };
+  $('#sugs').appendChild(b);
+});
+
+// ---------- chat render ----------
+function addMsg(who, text, extra, chips){
+  const d = document.createElement('div');
+  d.className = 'msg ' + (who==='you' ? 'you' : 'bot');
+  let h = `<div class="who">${who==='you'?'Aap':'JARVIS'}</div><div class="body">${esc(text)}</div>`;
+  if(extra) h += `<div class="extra">${esc(extra)}</div>`;
+  if(chips && chips.length) h += `<div class="chips">${chips.map(c=>`<span class="chip ${c.cls||''}">${esc(c.t)}</span>`).join('')}</div>`;
+  d.innerHTML = h;
+  chat.appendChild(d);
+  window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
+  return d.querySelector('.body');
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// ---------- speak ----------
+async function speak(text){
+  if(!ttsOn || !text) return;
+  setState('speaking','speaking');
+  try{
+    const r = await fetch('/api/speak', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text, play_local:false})});
+    if(!r.ok) throw new Error('tts fail');
+    const blob = await r.blob();
+    audio = new Audio(URL.createObjectURL(blob));
+    audio.onended = ()=>{ setState('','ready'); URL.revokeObjectURL(audio.src); };
+    await audio.play();
+  }catch(e){
+    // browser ki built-in voice (Chrome) try karo
+    if('speechSynthesis' in window){
+      const u = new SpeechSynthesisUtterance(text);
+      const vs = speechSynthesis.getVoices();
+      const hi = vs.find(v=>/^hi/i.test(v.lang)) || vs.find(v=>/en-IN/i.test(v.lang));
+      if(hi) u.voice = hi;
+      u.lang = 'hi-IN'; u.rate = 1.02;
+      u.onend = ()=>setState('','ready');
+      speechSynthesis.speak(u);
+    } else setState('','ready');
+  }
+}
+
+// ---------- send ----------
+function send(){
+  const t = qEl.value.trim(); if(!t || busy) return;
+  qEl.value=''; ask(t);
+}
+async function ask(text){
+  if(busy) return; busy = true;
+  stopAudio();
+  addMsg('you', text);
+  const node = addMsg('bot', '', null, null);
+  node.innerHTML = '<span class="typing">soch rahi hoon</span>';
+  setState('thinking','thinking');
+  let acc = '', tools = [], src = '', ok = true, extra = '';
+
+  const es = new EventSource('/api/chat/stream?q=' + encodeURIComponent(text));
+  es.addEventListener('thought', e=>{
+    const d = JSON.parse(e.data);
+    node.innerHTML = `<span class="typing">${esc(d.t)}</span>`;
+  });
+  es.addEventListener('token', e=>{
+    const d = JSON.parse(e.data);
+    if(!acc) node.textContent = '';
+    acc += d.t; node.textContent = acc;
+    window.scrollTo({top:document.body.scrollHeight});
+  });
+  es.addEventListener('done', async e=>{
+    es.close();
+    const d = JSON.parse(e.data);
+    ok = d.ok; tools = d.tools || []; src = d.source || ''; extra = (d.text && d.text!==d.speech) ? d.text : '';
+    node.textContent = d.speech || acc || '(kuch nahi bola)';
+    let chips = tools.filter(Boolean).map(t=>({t:'⚙ '+t}));
+    if(src) chips.push({t:src, cls:'src'});
+    if(!ok) chips.push({t:'fail', cls:'err'});
+    const wrap = node.parentElement;
+    if(extra){ const x=document.createElement('div'); x.className='extra'; x.textContent=extra; wrap.appendChild(x); }
+    if(chips.length){ const c=document.createElement('div'); c.className='chips';
+      c.innerHTML = chips.map(k=>`<span class="chip ${k.cls||''}">${esc(k.t)}</span>`).join(''); wrap.appendChild(c); }
+    busy = false;
+    await speak(d.speech || '');
+    if(!ttsOn) setState('','ready');
+  });
+  es.onerror = ()=>{
+    es.close();
+    if(!acc){ node.textContent = '⚠ Server se baat nahi ho payi. (python webapp.py chalao)'; }
+    busy=false; setState('','ready');
+  };
+}
+function stopAudio(){ if(audio){ try{audio.pause();}catch(e){} audio=null; }
+  if('speechSynthesis' in window) speechSynthesis.cancel(); }
+
+// ---------- mic (Web Speech API) ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+function initRec(){
+  if(!SR){ $('#warn').style.display='block';
+    $('#warn').textContent = '⚠ Is browser mein mic support nahi hai — Chrome/Edge use karo, ya type karke baat karo.';
+    return false; }
+  rec = new SR();
+  rec.lang = 'hi-IN'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  rec.onstart = ()=>{ listening=true; $('#mic').classList.add('rec'); setState('listening','listening…'); };
+  rec.onresult = e=>{
+    let t=''; for(const r of e.results) t += r[0].transcript;
+    qEl.value = t;
+  };
+  rec.onerror = e=>{ console.warn(e.error);
+    if(e.error==='not-allowed'){ $('#warn').style.display='block';
+      $('#warn').textContent='⚠ Mic permission chahiye. Browser ke address bar mein mic icon allow karo.'; } };
+  rec.onend = ()=>{
+    listening=false; $('#mic').classList.remove('rec');
+    if(!busy) setState('','ready');
+    const t = qEl.value.trim();
+    if(t){ qEl.value=''; ask(t); }
+  };
+  return true;
+}
+const haveRec = initRec();
+function toggleMic(){
+  if(!haveRec || !rec) return;
+  if(listening){ rec.stop(); }
+  else { stopAudio(); qEl.value=''; try{ rec.start(); }catch(e){} }
+}
+$('#mic').onclick = toggleMic;
+orb.onclick = toggleMic;
+$('#send').onclick = send;
+qEl.addEventListener('keydown', e=>{ if(e.key==='Enter') send(); });
+$('#tts').onclick = e=>{ ttsOn=!ttsOn; e.currentTarget.style.opacity = ttsOn? .85 : .35; if(!ttsOn){ stopAudio(); setState('','ready'); } };
+$('#clr').onclick = async ()=>{ chat.innerHTML=''; try{ await fetch('/api/reset',{method:'POST'}); }catch(e){} };
+
+// mobile: HTTPS chahiye mic ke liye
+if(location.protocol==='http:' && !['localhost','127.0.0.1'].includes(location.hostname)){
+  $('#warn').style.display='block';
+  $('#warn').textContent = '📱 Phone pe mic chahiye to HTTPS use karo (ya type karke baat karo).';
+}
+
+// greeting
+addMsg('bot', "Namaste! Main JARVIS hoon. Mic daba kar boliye ya type karo. Neeche se koi suggestion bhi daba sakte ho.");
+setState('','ready');
+</script>
+</body>
+</html>

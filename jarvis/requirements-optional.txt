@@ -1,0 +1,20 @@
+# ============================================================
+#  JARVIS - OPTIONAL packages
+#  Ye fail ho jaayein tab bhi JARVIS chalega.
+#  Install:  pip install -r requirements-optional.txt
+# ============================================================
+
+pyaudio>=0.2.14
+piper-tts>=1.2.0
+vosk>=0.3.45
+openwakeword>=0.6.0
+pywhatkit>=5.4
+pyautogui>=0.9.54
+wikipedia>=1.4.0
+python-dateutil>=2.9.0
+
+# Dev tools
+pytest>=7.0
+pytest-asyncio>=0.23
+ruff>=0.4.0
+mypy>=1.8.0
