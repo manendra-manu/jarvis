@@ -3,23 +3,39 @@ JARVIS - Web server (FastAPI) with Dynamic Voice & Speed Control Settings.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Auto-Path Resolution so imports like `from jarvis import ...` work everywhere
+FILE_DIR = Path(__file__).resolve().parent
+PARENT_DIR = FILE_DIR.parent
+for d in (str(PARENT_DIR), str(FILE_DIR)):
+    if d not in sys.path:
+        sys.path.insert(0, d)
+
 import json
 import os
 import queue
 import threading
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from jarvis import config as _config
-from jarvis import tools as _tools
-from jarvis.brain import Brain, groq_key
-from jarvis.speak import Speaker, say
+# Safe Imports with Fallback
+try:
+    from jarvis import config as _config
+    from jarvis import tools as _tools
+    from jarvis.brain import Brain, groq_key
+    from jarvis.speak import Speaker, say
+except ImportError:
+    import config as _config
+    import tools as _tools
+    from brain import Brain, groq_key
+    from speak import Speaker, say
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+WEB_DIR = FILE_DIR / "web"
 WEB_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="JARVIS", version="2.0.0")
@@ -28,11 +44,13 @@ _brain_lock = threading.Lock()
 _brain = Brain()
 _thoughts: queue.Queue[str] = queue.Queue(maxsize=50)
 
+
 def _put_thought(s: str) -> None:
     try:
         _thoughts.put_nowait(s)
     except Exception:
         pass
+
 
 _brain.on_thought = _put_thought
 
@@ -40,7 +58,7 @@ _brain.on_thought = _put_thought
 RUNTIME_SETTINGS = {
     "voice": "hi-IN-SwaraNeural",  # Default Hindi Female Voice
     "speed": "+35%",               # Default Speed (+35% Fast)
-    "city": _config.DEFAULT_CITY
+    "city": getattr(_config, "DEFAULT_CITY", "Delhi")
 }
 
 
@@ -72,7 +90,7 @@ def index():
 def status() -> dict:
     has_groq = bool(groq_key())
     return {
-        "name": _config.ASSISTANT_NAME,
+        "name": getattr(_config, "ASSISTANT_NAME", "JARVIS"),
         "groq_online": has_groq,
         "current_voice": RUNTIME_SETTINGS["voice"],
         "current_speed": RUNTIME_SETTINGS["speed"],
@@ -136,7 +154,10 @@ def speak(body: SpeakIn):
         import uuid
         import edge_tts
 
-        out = _config.AUDIO_DIR / f"web_{uuid.uuid4().hex[:8]}.mp3"
+        audio_dir = getattr(_config, "AUDIO_DIR", FILE_DIR / "data" / "audio")
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        out = audio_dir / f"web_{uuid.uuid4().hex[:8]}.mp3"
+
         voice_to_use = body.voice or RUNTIME_SETTINGS["voice"]
         speed_to_use = body.speed or RUNTIME_SETTINGS["speed"]
 
@@ -189,8 +210,9 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 def run(port: int | None = None) -> None:
     """Start the web server."""
     import uvicorn
-    port = port or _config.WEB_PORT
-    uvicorn.run(app, host=_config.WEB_HOST, port=port, log_level="warning")
+    host = getattr(_config, "WEB_HOST", "0.0.0.0")
+    port = port or getattr(_config, "WEB_PORT", 8000)
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
