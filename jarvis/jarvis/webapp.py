@@ -1,6 +1,5 @@
 """
-JARVIS - Web server (FastAPI) for browser/phone access.
-Thread-safe with singleton brain instance & Fast Speech Rate.
+JARVIS - Web server (FastAPI) with Dynamic Voice & Speed Control Settings.
 """
 from __future__ import annotations
 
@@ -17,20 +16,17 @@ from pydantic import BaseModel
 
 from jarvis import config as _config
 from jarvis import tools as _tools
-from jarvis.brain import Brain, ollama_alive, ollama_models
+from jarvis.brain import Brain, groq_key
 from jarvis.speak import Speaker, say
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 WEB_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL = os.environ.get("JARVIS_MODEL") or _config.OLLAMA_MODEL
-
 app = FastAPI(title="JARVIS", version="2.0.0")
 
 _brain_lock = threading.Lock()
-_brain = Brain(model=MODEL)
+_brain = Brain()
 _thoughts: queue.Queue[str] = queue.Queue(maxsize=50)
-
 
 def _put_thought(s: str) -> None:
     try:
@@ -38,8 +34,14 @@ def _put_thought(s: str) -> None:
     except Exception:
         pass
 
-
 _brain.on_thought = _put_thought
+
+# Runtime Dynamic Settings (Controlled directly from Web UI)
+RUNTIME_SETTINGS = {
+    "voice": "hi-IN-SwaraNeural",  # Default Hindi Female Voice
+    "speed": "+35%",               # Default Speed (+35% Fast)
+    "city": _config.DEFAULT_CITY
+}
 
 
 class ChatIn(BaseModel):
@@ -48,7 +50,14 @@ class ChatIn(BaseModel):
 
 class SpeakIn(BaseModel):
     text: str
-    play_local: bool = True
+    voice: str | None = None
+    speed: str | None = None
+
+
+class SettingsIn(BaseModel):
+    voice: str | None = None
+    speed: str | None = None
+    city: str | None = None
 
 
 @app.get("/")
@@ -56,26 +65,59 @@ def index():
     f = WEB_DIR / "index.html"
     if f.exists():
         return FileResponse(str(f))
-    return JSONResponse({"error": "web/index.html nahi mila. Please web/ directory check karein."})
+    return JSONResponse({"error": "web/index.html nahi mila."})
 
 
 @app.get("/api/status")
 def status() -> dict:
-    alive = ollama_alive()
-    with _brain_lock:
-        brain_model = _brain.model
+    has_groq = bool(groq_key())
     return {
         "name": _config.ASSISTANT_NAME,
-        "ollama": alive,
-        "ollama_host": _config.OLLAMA_HOST,
-        "model": brain_model,
-        "models": ollama_models() if alive else [],
-        "voice": _config.EDGE_VOICE,
+        "groq_online": has_groq,
+        "current_voice": RUNTIME_SETTINGS["voice"],
+        "current_speed": RUNTIME_SETTINGS["speed"],
+        "current_city": RUNTIME_SETTINGS["city"],
         "language": "Hinglish",
         "tools": sorted(_tools.TOOLS.keys()),
-        "wake_words": _config.WAKE_WORDS,
-        "default_city": _config.DEFAULT_CITY,
     }
+
+
+@app.get("/api/voices")
+async def get_voices():
+    """Return list of Female Voices for Web UI dropdown."""
+    try:
+        import edge_tts
+        all_voices = await edge_tts.list_voices()
+        locales = ["hi-IN", "en-IN", "en-US", "en-GB"]
+        females = [
+            {"name": v["ShortName"], "lang": v["Locale"], "friendly_name": f"{v['ShortName']} ({v['Locale']})"}
+            for v in all_voices
+            if v.get("Gender") == "Female" and v.get("Locale") in locales
+        ]
+        return {"ok": True, "voices": females}
+    except Exception as e:
+        return {"ok": False, "voices": [
+            {"name": "hi-IN-SwaraNeural", "friendly_name": "Hindi - Swara"},
+            {"name": "en-IN-NeerjaNeural", "friendly_name": "English India - Neerja"},
+            {"name": "en-US-AvaNeural", "friendly_name": "English US - Ava"}
+        ]}
+
+
+@app.get("/api/settings")
+def get_settings():
+    return RUNTIME_SETTINGS
+
+
+@app.post("/api/settings")
+def update_settings(body: SettingsIn):
+    """Update Voice, Speed, and City from Web UI directly."""
+    if body.voice:
+        RUNTIME_SETTINGS["voice"] = body.voice
+    if body.speed:
+        RUNTIME_SETTINGS["speed"] = body.speed
+    if body.city:
+        RUNTIME_SETTINGS["city"] = body.city
+    return {"ok": True, "settings": RUNTIME_SETTINGS}
 
 
 @app.post("/api/chat")
@@ -83,72 +125,23 @@ def chat(body: ChatIn) -> dict:
     with _brain_lock:
         res = _brain.think(body.text)
     res.setdefault("tools", [])
-    if res.get("tool") and res["tool"] not in res["tools"]:
-        res["tools"].append(res["tool"])
     return res
-
-
-@app.get("/api/chat/stream")
-def chat_stream(q: str = ""):
-    with _thoughts.mutex:
-        _thoughts.queue.clear()
-
-    def gen():
-        q_text = q
-        buf: list[str] = []
-
-        def on_token(ch: str) -> None:
-            buf.append(ch)
-
-        def worker() -> dict:
-            try:
-                with _brain_lock:
-                    return _brain.think_stream(q_text, on_token)
-            except Exception as e:
-                return {"ok": False, "speech": f"Error: {e}", "text": "", "tools": [], "source": "error"}
-
-        result: dict = {}
-        th = threading.Thread(target=lambda: result.update(worker()), daemon=True)
-        th.start()
-        sent = 0
-
-        while th.is_alive():
-            if len(buf) > sent:
-                chunk = "".join(buf[sent:])
-                sent = len(buf)
-                yield f"event: token\ndata: {json.dumps({'t': chunk}, ensure_ascii=False)}\n\n"
-
-            try:
-                thought = _thoughts.get_nowait()
-                yield f"event: thought\ndata: {json.dumps({'t': thought}, ensure_ascii=False)}\n\n"
-            except queue.Empty:
-                pass
-
-            threading.Event().wait(0.05)
-
-        if len(buf) > sent:
-            yield f"event: token\ndata: {json.dumps({'t': ''.join(buf[sent:])}, ensure_ascii=False)}\n\n"
-
-        result.setdefault("tools", [])
-        yield f"event: done\ndata: {json.dumps(result, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.post("/api/speak")
 def speak(body: SpeakIn):
-    """Generate MP3 audio from text using edge-tts with Fast (+35%) Speech Rate."""
+    """Generate audio with dynamic speed and voice from UI settings."""
     try:
         import asyncio
         import uuid
         import edge_tts
 
         out = _config.AUDIO_DIR / f"web_{uuid.uuid4().hex[:8]}.mp3"
-        voice = _config.EDGE_VOICE
+        voice_to_use = body.voice or RUNTIME_SETTINGS["voice"]
+        speed_to_use = body.speed or RUNTIME_SETTINGS["speed"]
 
         async def generate_audio() -> None:
-            # rate="+35%" se bolne ki speed tez ho gayi hai
-            c = edge_tts.Communicate(body.text, voice=voice, rate="+35%")
+            c = edge_tts.Communicate(body.text, voice=voice_to_use, rate=speed_to_use)
             await c.save(str(out))
 
         try:
@@ -178,20 +171,9 @@ def speak(body: SpeakIn):
             except OSError:
                 pass
 
-        if body.play_local:
-            threading.Thread(target=say, args=(body.text,), daemon=True).start()
-
         return Response(content=data, media_type="audio/mpeg")
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"}, status_code=500)
-
-
-@app.get("/api/reminders")
-def reminders() -> dict:
-    try:
-        return _tools.run_tool("list_reminders")
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/reset")
@@ -208,20 +190,7 @@ def run(port: int | None = None) -> None:
     """Start the web server."""
     import uvicorn
     port = port or _config.WEB_PORT
-
-    try:
-        _tools.scheduler.start()
-    except Exception:
-        pass
-
-    print(f"\n🌐 JARVIS web UI: http://localhost:{port}   (phone: http://<PC-IP>:{port})")
-    print(f"🧠 Ollama: {'ONLINE' if ollama_alive() else 'OFFLINE (rule-engine chalega)'}  model={MODEL}\n")
     uvicorn.run(app, host=_config.WEB_HOST, port=port, log_level="warning")
-
-
-def run_web(port: int | None = None) -> None:
-    """Entry point for jarvis-web console script."""
-    run(port)
 
 
 if __name__ == "__main__":
